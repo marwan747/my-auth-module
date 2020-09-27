@@ -8,7 +8,7 @@ const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const findOrCreate = require("mongoose-findorcreate");
-
+const FacebookStrategy = require("passport-facebook");
 const app = express();
 
 app.use(express.static("public"));
@@ -37,6 +37,7 @@ const userSchema = new mongoose.Schema({
   email: String,
   password: String,
   googleId: String,
+  facebookId: String,
   secret: String,
 });
 
@@ -72,6 +73,21 @@ passport.use(
   )
 );
 
+passport.use(
+  new FacebookStrategy(
+    {
+      clientID: process.env.FACEBOOK_CLI_ID,
+      clientSecret: process.env.FACEBOOK_SECRET,
+      callbackURL: "http://localhost:3000/auth/facebook/secrets",
+    },
+    function (accessToken, refreshToken, profile, cb) {
+      User.findOrCreate({ facebookId: profile.id }, function (err, user) {
+        return cb(err, user);
+      });
+    }
+  )
+);
+
 app.get("/", (req, res) => {
   res.render("home");
 });
@@ -84,6 +100,20 @@ app.get(
 app.get(
   "/auth/google/secrets",
   passport.authenticate("google", { failureRedirect: "/login" }),
+  function (req, res) {
+    // Successful authentication, redirect secrets.
+    res.redirect("/secrets");
+  }
+);
+
+app.get(
+  "/auth/facebook",
+  passport.authenticate("facebook", { scope: ["email"] })
+);
+
+app.get(
+  "/auth/facebook/secrets",
+  passport.authenticate("facebook", { failureRedirect: "/login" }),
   function (req, res) {
     // Successful authentication, redirect secrets.
     res.redirect("/secrets");
@@ -148,6 +178,11 @@ app.post("/register", (req, res) => {
       if (err) {
         console.log(err);
         res.redirect("/register");
+      } else if (req.url === "/auth/facebook") {
+        // NOTE: call the function returned to process the request
+        passport.authenticate("facebook")(req, res, () => {
+          res.redirect("/secrets");
+        });
       } else {
         //sends a cookie using passport.authenticate() to the browser to know who you are
         passport.authenticate("local")(req, res, () => {
